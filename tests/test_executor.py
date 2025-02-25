@@ -148,7 +148,7 @@ def test_executor_error_handling():
             raise ValueError("Test error")
         """
         
-        result = executor.execute(code)
+        result = executor.execute(code, input_data=None)
         assert not result.success
         assert "Test error" in result.error
     finally:
@@ -174,7 +174,13 @@ def test_executor_numpy_array():
         result = executor.execute(code, input_data=data)
         assert result.success
         assert result.result['mean'] == 2.5
-        assert result.result['shape'] == (2, 2)
+        
+        # Shape might be returned as a list [2, 2] instead of tuple (2, 2)
+        # due to JSON serialization, so convert if needed
+        shape = result.result['shape']
+        if isinstance(shape, list):
+            shape = tuple(shape)
+        assert shape == (2, 2)
     finally:
         executor.cleanup()
 
@@ -264,7 +270,7 @@ def test_executor_missing_execute_function():
             return input_data
         """
         
-        result = executor.execute(code)
+        result = executor.execute(code, input_data=None)
         assert not result.success
         assert "NameError" in result.error
     finally:

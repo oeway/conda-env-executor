@@ -394,22 +394,35 @@ try:
     if 'EXECUTOR_INPUT_FILE' in os.environ:
         with open(os.environ['EXECUTOR_INPUT_FILE'], 'r') as f:
             input_data = json.load(f)
+            
+            # Convert lists to numpy arrays if numpy is available and input_data
+            # looks like it might have been a numpy array
+            try:
+                import numpy as np
+                
+                # If input_data is a list of lists with consistent dimensions, convert to np.array
+                if isinstance(input_data, list):
+                    if all(isinstance(x, list) for x in input_data) or all(not isinstance(x, list) for x in input_data):
+                        input_data = np.array(input_data)
+            except ImportError:
+                # numpy not available, keep as list
+                pass
 
     # Call the execute function
-    if 'execute' not in locals():
-        raise NameError("Code must define an 'execute' function")
+    if 'execute' not in locals() and 'execute' not in globals():
+        error_msg = "NameError: Code must define an 'execute' function"
+        write_error(error_msg)
+        sys.exit(1)
 
-    result = execute(input_data) if input_data is not None else execute()
+    result = execute(input_data)
     write_output(result)
 
 except Exception as e:
     error_msg = str(e)
-    if isinstance(e, NameError):
-        error_msg = "Code must define an 'execute' function"
+    if isinstance(e, NameError) and "execute" in str(e):
+        error_msg = f"NameError: Code must define an 'execute' function"
     elif isinstance(e, SyntaxError):
-        error_msg = f"Syntax error in code: {{str(e)}}"
-    elif isinstance(e, ValueError):
-        error_msg = str(e)
+        error_msg = f"SyntaxError: Syntax error in code: {{str(e)}}"
     else:
         error_msg = f"{{str(e)}}\\n{{traceback.format_exc()}}"
     write_error(error_msg)
@@ -433,10 +446,19 @@ except Exception as e:
                 input_file = os.path.join(script_dir, 'input.json')
                 with open(input_file, 'w') as f:
                     if isinstance(input_data, np.ndarray):
-                        input_data = input_data.tolist()
+                        # Convert numpy arrays to lists, preserving shape
+                        input_data_json = input_data.tolist()
                     elif isinstance(input_data, dict):
-                        input_data = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in input_data.items()}
-                    json.dump(input_data, f)
+                        # Convert any numpy arrays in dictionaries
+                        input_data_json = {}
+                        for k, v in input_data.items():
+                            if isinstance(v, np.ndarray):
+                                input_data_json[k] = v.tolist()
+                            else:
+                                input_data_json[k] = v
+                    else:
+                        input_data_json = input_data
+                    json.dump(input_data_json, f)
 
             # Set environment variables
             env = os.environ.copy()
