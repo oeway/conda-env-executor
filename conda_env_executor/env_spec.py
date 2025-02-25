@@ -57,12 +57,37 @@ class EnvSpec:
 
     def to_dict(self) -> Dict:
         """Convert the EnvSpec to a dictionary."""
-        return {
+        spec = {
             'name': self.name or 'temp_env',
-            'channels': self.channels,
-            'dependencies': self.dependencies,
-            'prefix': self.prefix
+            'channels': [],
+            'dependencies': []
         }
+        
+        # Ensure channels is a list of strings
+        if isinstance(self.channels, list):
+            spec['channels'] = [str(channel) for channel in self.channels]
+        elif isinstance(self.channels, str):
+            spec['channels'] = [str(self.channels)]
+        else:
+            spec['channels'] = ['conda-forge']
+        
+        # Ensure dependencies is a list
+        if isinstance(self.dependencies, list):
+            spec['dependencies'].extend(self.dependencies)
+        elif isinstance(self.dependencies, str):
+            spec['dependencies'].append(self.dependencies)
+        elif isinstance(self.dependencies, dict):
+            # Handle pip dependencies separately
+            for key, value in self.dependencies.items():
+                if key == 'pip':
+                    if isinstance(value, list):
+                        spec['dependencies'].append({'pip': value})
+                    else:
+                        spec['dependencies'].append({'pip': [value]})
+                else:
+                    spec['dependencies'].append(f"{key}={value}")
+        
+        return spec
 
 def extract_spec_from_code(code: str) -> Optional[EnvSpec]:
     """

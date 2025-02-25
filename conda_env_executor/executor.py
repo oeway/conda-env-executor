@@ -36,8 +36,9 @@ log.addHandler(logging.NullHandler())
 @dataclass
 class TimingInfo:
     """Timing information for environment setup and code execution."""
-    env_setup: float
-    code_execution: float
+    env_setup_time: float
+    execution_time: float
+    total_time: float
 
 @dataclass
 class ExecutionResult:
@@ -171,19 +172,6 @@ class CondaEnvExecutor:
         self._env_path = Path(value) if value else None
 
     @classmethod
-    def from_yaml(cls, yaml_file: Union[str, Path], **kwargs) -> 'CondaEnvExecutor':
-        """Create an executor from a YAML environment specification file.
-
-        Args:
-            yaml_file: Path to the YAML file.
-            **kwargs: Additional arguments passed to the constructor.
-
-        Returns:
-            CondaEnvExecutor instance.
-        """
-        return cls(yaml_file, **kwargs)
-    
-    @classmethod
     def create_temp_env(cls, packages: List[str], channels: Optional[List[str]] = None, **kwargs) -> 'CondaEnvExecutor':
         """Create an executor with a temporary environment.
 
@@ -196,10 +184,24 @@ class CondaEnvExecutor:
             CondaEnvExecutor instance.
         """
         spec = {
+            'name': 'temp_env',
             'channels': channels or ['conda-forge'],
             'dependencies': packages
         }
         return cls(spec, **kwargs)
+
+    @classmethod
+    def from_yaml(cls, yaml_file: Union[str, Path], **kwargs) -> 'CondaEnvExecutor':
+        """Create an executor from a YAML environment specification file.
+
+        Args:
+            yaml_file: Path to the YAML file.
+            **kwargs: Additional arguments passed to the constructor.
+
+        Returns:
+            CondaEnvExecutor instance.
+        """
+        return cls(yaml_file, **kwargs)
     
     def _create_conda_env(self) -> float:
         """Create a conda environment from the specified source.
@@ -228,38 +230,16 @@ class CondaEnvExecutor:
             yaml.safe_dump(spec.to_dict(), f)
 
         # Create the environment
-        cmd = f"conda env create -p {self.env_path} -f {env_file}"
+        if os.name == 'nt':  # Windows
+            create_cmd = f"conda env create -p {self.env_path} -f {env_file} -y"
+        else:  # Unix-like
+            create_cmd = f"source $(conda info --base)/etc/profile.d/conda.sh && conda env create -p {self.env_path} -f {env_file} -y"
+
         try:
-            subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+            subprocess.run(create_cmd, shell=True, check=True, capture_output=True, text=True)
+            return time.time() - start_time
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to create conda environment: {e.stderr}")
-
-        # Wait for the environment to be ready (check for python executable)
-        python_path = os.path.join(self.env_path, 'bin', 'python')
-        if os.name == 'nt':  # Windows
-            python_path = os.path.join(self.env_path, 'python.exe')
-
-        timeout = 60  # seconds
-        start_wait = time.time()
-        while not os.path.exists(python_path):
-            if time.time() - start_wait > timeout:
-                raise RuntimeError(f"Timeout waiting for environment to be ready at {self.env_path}")
-            time.sleep(1)
-
-        # Verify the environment works by running a simple Python command
-        try:
-            result = subprocess.run(
-                [python_path, "-c", "import sys; print(sys.executable)"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            if not result.stdout.strip():
-                raise RuntimeError("Failed to get Python executable path")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to verify conda environment: {e.stderr}")
-
-        return time.time() - start_time
     
     def _extract_env(self) -> float:
         """Extract or create the conda environment.
@@ -336,7 +316,7 @@ def write_error(error: str) -> None:
 
 try:
     # Execute the user code
-{}
+{0}
 
     # Get input data if provided
     input_data = None
@@ -380,91 +360,151 @@ except Exception as e:
         start_time = time.time()
         env_setup_time = self._extract_env()
 
-        # Create the execution script
+        # Create temporary files for input/output
         script_dir = os.path.join(self.env_path, '.scripts')
         os.makedirs(script_dir, exist_ok=True)
         script_path = os.path.join(script_dir, 'execute.py')
-
-        with open(script_path, 'w') as f:
-            f.write(self._create_execution_script(code))
-
-        # Create temporary files for input/output
-        input_file = None
         output_file = os.path.join(script_dir, 'output.json')
+        input_file = None
 
         try:
+            # Create the execution script
+            script_template = '''
+import os
+import sys
+import json
+import traceback
+from typing import Any
+
+def write_output(output: Any) -> None:
+    """Write output to the output file."""
+    with open(os.environ['EXECUTOR_OUTPUT_FILE'], 'w') as f:
+        json.dump({{'success': True, 'result': output}}, f)
+
+def write_error(error: str) -> None:
+    """Write error to the output file."""
+    with open(os.environ['EXECUTOR_OUTPUT_FILE'], 'w') as f:
+        json.dump({{'success': False, 'error': error}}, f)
+
+try:
+{0}
+
+    # Get input data if provided
+    input_data = None
+    if 'EXECUTOR_INPUT_FILE' in os.environ:
+        with open(os.environ['EXECUTOR_INPUT_FILE'], 'r') as f:
+            input_data = json.load(f)
+
+    # Call the execute function
+    if 'execute' not in locals():
+        raise NameError("Code must define an 'execute' function")
+
+    result = execute(input_data) if input_data is not None else execute()
+    write_output(result)
+
+except Exception as e:
+    error_msg = str(e)
+    if isinstance(e, NameError):
+        error_msg = "Code must define an 'execute' function"
+    elif isinstance(e, SyntaxError):
+        error_msg = f"Syntax error in code: {{str(e)}}"
+    elif isinstance(e, ValueError):
+        error_msg = str(e)
+    else:
+        error_msg = f"{{str(e)}}\\n{{traceback.format_exc()}}"
+    write_error(error_msg)
+    sys.exit(1)
+'''
+            # Process the user code
+            # First, dedent the code to remove common leading whitespace
+            processed_code = textwrap.dedent(code)
+            # Now indent each line by 4 spaces
+            processed_code = '\n'.join('    ' + line if line.strip() else line for line in processed_code.split('\n'))
+            
+            # Now format it into the script template
+            script_content = script_template.format(processed_code)
+
+            # Write the script
+            with open(script_path, 'w') as f:
+                f.write(script_content)
+
+            # Write input data if provided
             if input_data is not None:
                 input_file = os.path.join(script_dir, 'input.json')
                 with open(input_file, 'w') as f:
+                    if isinstance(input_data, np.ndarray):
+                        input_data = input_data.tolist()
+                    elif isinstance(input_data, dict):
+                        input_data = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in input_data.items()}
                     json.dump(input_data, f)
 
-            # Set up environment variables
+            # Set environment variables
             env = os.environ.copy()
             env['EXECUTOR_OUTPUT_FILE'] = output_file
             if input_file:
                 env['EXECUTOR_INPUT_FILE'] = input_file
 
-            # Run the script
+            # Execute the script
             python_path = os.path.join(self.env_path, 'bin', 'python')
             if os.name == 'nt':  # Windows
                 python_path = os.path.join(self.env_path, 'python.exe')
 
-            result = subprocess.run(
-                [python_path, script_path],
-                env=env,
-                capture_output=True,
-                text=True
-            )
-
-            # Check for execution errors
-            if result.returncode != 0:
-                return ExecutionResult(
-                    success=False,
-                    error=str(result),
-                    stdout=result.stdout,
-                    stderr=result.stderr,
-                    timing=TimingInfo(
-                        env_setup=env_setup_time,
-                        code_execution=time.time() - start_time - env_setup_time
-                    )
-                )
-
-            # Read the output
+            start_exec_time = time.time()
             try:
+                result = subprocess.run([python_path, script_path], env=env, check=True, capture_output=True, text=True)
+                # Read output
                 with open(output_file, 'r') as f:
                     output = json.load(f)
-            except Exception as e:
+
+                execution_time = time.time() - start_exec_time
+                total_time = time.time() - start_time
+
                 return ExecutionResult(
-                    success=False,
-                    error=f"Failed to read output: {e}",
+                    success=output['success'],
+                    result=output.get('result'),
+                    error=output.get('error'),
                     stdout=result.stdout,
                     stderr=result.stderr,
                     timing=TimingInfo(
-                        env_setup=env_setup_time,
-                        code_execution=time.time() - start_time - env_setup_time
+                        env_setup_time=env_setup_time,
+                        execution_time=execution_time,
+                        total_time=total_time
                     )
                 )
+            except subprocess.CalledProcessError as e:
+                execution_time = time.time() - start_exec_time
+                total_time = time.time() - start_time
 
-            return ExecutionResult(
-                success=output.get('success', False),
-                result=output.get('result'),
-                error=output.get('error'),
-                stdout=result.stdout,
-                stderr=result.stderr,
-                timing=TimingInfo(
-                    env_setup=env_setup_time,
-                    code_execution=time.time() - start_time - env_setup_time
+                # Try to read error from output file
+                error = e.stderr
+                try:
+                    with open(output_file, 'r') as f:
+                        output = json.load(f)
+                        if not output['success']:
+                            error = output['error']
+                except:
+                    pass
+
+                return ExecutionResult(
+                    success=False,
+                    error=error,
+                    stdout=e.stdout,
+                    stderr=e.stderr,
+                    timing=TimingInfo(
+                        env_setup_time=env_setup_time,
+                        execution_time=execution_time,
+                        total_time=total_time
+                    )
                 )
-            )
 
         finally:
             # Clean up temporary files
             if os.path.exists(script_path):
-                os.unlink(script_path)
-            if input_file and os.path.exists(input_file):
-                os.unlink(input_file)
+                os.remove(script_path)
             if os.path.exists(output_file):
-                os.unlink(output_file)
+                os.remove(output_file)
+            if input_file and os.path.exists(input_file):
+                os.remove(input_file)
     
     def cleanup(self) -> None:
         """Clean up temporary files."""

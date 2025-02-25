@@ -20,14 +20,12 @@ from conda_env_executor.executor import (
 
 def create_test_env_yaml(tmp_path):
     """Create a test environment YAML file."""
-    yaml_content = """
-    name: test-env
-    channels:
-      - conda-forge
-    dependencies:
-      - python=3.9
-      - numpy
-    """
+    yaml_content = """name: test-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - numpy"""
     yaml_file = tmp_path / "env.yaml"
     yaml_file.write_text(yaml_content)
     return yaml_file
