@@ -6,12 +6,12 @@ import argparse
 import uuid
 import sys
 from hypha_rpc import connect_to_server, login
+from typing import Union, Dict
 
 
 def remote_conda_function(
     service_id: str,
-    env_spec_type: str = 'packages',
-    env_spec_value: any = None,
+    dependencies: list[Union[str, Dict]] = None,
     channels: list[str] = None,
 ):
     """
@@ -21,18 +21,15 @@ def remote_conda_function(
     Args:
         service_id: The full ID of the target conda-python-executor service
                     (e.g., "workspace/conda-executor-uuid").
-        env_spec_type: Type of environment specification ('yaml_file',
-                       'pack_file', 'yaml_content', 'packages').
-        env_spec_value: The specification value corresponding to the type.
-                       Defaults to ['python'] if type is 'packages' and value is None.
-        channels: List of Conda channels (used for 'packages' type).
-                  Defaults to ['conda-forge'].
+        dependencies: List of conda/pip packages to install in the environment.
+                      If None, defaults to ["python"].
+        channels: List of Conda channels to use. Defaults to ["conda-forge"].
     """
-    if env_spec_type == 'packages' and env_spec_value is None:
-        env_spec_value = ["python"] # Default minimal environment
+    if dependencies is None:
+        dependencies = ["python"]  # Default minimal environment
 
-    if env_spec_type == 'packages' and channels is None:
-        channels = ["conda-forge"] # Default channels
+    if channels is None:
+        channels = ["conda-forge"]  # Default channels
 
     def decorator(func):
         # Get the source code of the decorated function
@@ -95,8 +92,7 @@ def execute(input_data):
                 return None
 
             print(f"🚀 Calling remote function '{func.__name__}' via service '{service_id}'...")
-            print(f"   Environment Type: {env_spec_type}")
-            print(f"   Environment Spec: {str(env_spec_value)[:100]}...")
+            print(f"   Dependencies: {str(dependencies)[:100]}...")
             if channels:
                  print(f"   Channels: {channels}")
 
@@ -104,8 +100,7 @@ def execute(input_data):
             result = await service.execute(
                 code=remote_code,
                 input_data=input_data,
-                env_spec_type=env_spec_type,
-                env_spec_value=env_spec_value,
+                dependencies=dependencies,
                 channels=channels,
             )
 
@@ -186,8 +181,7 @@ async def main():
     # Decorate the function, specifying the service and required environment
     @remote_conda_function(
         service_id=args.service_id,
-        env_spec_type='packages',
-        env_spec_value=['python=3.9', 'numpy'] # Specify dependencies
+        dependencies=['python=3.9', 'numpy'] # Specify dependencies
     )
     async def remote_process_data(data: list, multiplier: int = 1):
         """Example function that uses numpy (needs to be in the env spec)."""

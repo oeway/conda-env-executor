@@ -198,4 +198,25 @@ def test_read_env_spec_invalid_yaml_file(tmp_path):
     yaml_file.write_text("invalid: - yaml: content")
     
     with pytest.raises(ValueError, match="Could not parse environment file"):
-        read_env_spec(yaml_file) 
+        read_env_spec(yaml_file)
+
+
+def test_env_spec_with_pip_packages():
+    """Test EnvSpec with pip dependencies."""
+    # Create a spec with conda and pip dependencies
+    spec_dict = {
+        "name": "test-pip-env",
+        "channels": ["conda-forge"],
+        "dependencies": [
+            "python=3.9",
+            "pip",
+            {"pip": ["numpy"]}
+        ]
+    }
+    
+    spec = EnvSpec.from_dict(spec_dict)
+    assert spec.name == "test-pip-env"
+    assert spec.channels == ["conda-forge"]
+    assert "python=3.9" in spec.dependencies
+    assert "pip" in spec.dependencies
+    assert {"pip": ["numpy"]} in spec.dependencies 

@@ -3,7 +3,7 @@ import argparse
 import os
 import traceback
 import uuid
-import tempfile
+from typing import Union, Dict
 import sys
 from hypha_rpc import login, connect_to_server
 
@@ -22,8 +22,7 @@ except ImportError:
 async def execute_in_conda_env(
     code: str,
     input_data: any = None,
-    env_spec_type: str = 'yaml_file',
-    env_spec_value: any = None,
+    dependencies: list[Union[str, Dict]] = None,
     channels: list[str] = None,
 ) -> dict:
     """
@@ -32,13 +31,9 @@ async def execute_in_conda_env(
     Args:
         code: The Python code string. Must contain a function `execute(input_data)`.
         input_data: Data to be passed to the `execute` function. Must be serializable.
-        env_spec_type: Type of environment specification. One of:
-                       'yaml_file', 'pack_file', 'yaml_content', 'packages'.
-        env_spec_value: Specification value:
-                        - Path to file (for 'yaml_file', 'pack_file').
-                        - YAML content as string (for 'yaml_content').
-                        - List of package strings (for 'packages').
-        channels: List of Conda channels (only used for 'packages' type).
+        dependencies: List of conda/pip packages to install in the environment.
+                     If None, defaults to ["python"].
+        channels: List of Conda channels to use. Defaults to ["conda-forge"].
 
     Returns:
         A dictionary containing execution results:
@@ -54,57 +49,27 @@ async def execute_in_conda_env(
     if not code:
         return {"success": False, "error": "No code provided."}
 
-    if not env_spec_value and env_spec_type != 'packages':
-        return {"success": False, "error": "Environment specification value is required for type " f"'{env_spec_type}'."}
+    if dependencies is None:
+        # Default to just python if dependencies list is empty or None
+        dependencies = ["python"]
+        print("Warning: No dependencies specified. Using default: ['python']")
 
-    if env_spec_type == 'packages' and not env_spec_value:
-        # Default to just python if packages list is empty or None
-        env_spec_value = ["python"]
-        print("Warning: 'packages' specified but no packages listed. Using default: ['python']")
-
+    if channels is None:
+        channels = ["conda-forge"]
 
     executor = None
-    temp_yaml_path = None
     loop = asyncio.get_running_loop()
 
     try:
-        print(f"Attempting to set up environment: type='{env_spec_type}', "
-              f"value='{str(env_spec_value)[:50]}...'")
+        print(f"Attempting to set up environment with dependencies: {dependencies}")
 
-        # --- Create or Get Executor ---
-        # Run potentially blocking operations in executor threads
-        if env_spec_type == 'yaml_file':
-            if not isinstance(env_spec_value, str) or not os.path.exists(env_spec_value):
-                return {"success": False, "error": f"YAML file not found or invalid path: {env_spec_value}"}
-            executor = await loop.run_in_executor(None, CondaEnvExecutor.from_yaml, env_spec_value)
-
-        elif env_spec_type == 'pack_file':
-            if not isinstance(env_spec_value, str) or not os.path.exists(env_spec_value):
-                return {"success": False, "error": f"Pack file not found or invalid path: {env_spec_value}"}
-            executor = await loop.run_in_executor(None, CondaEnvExecutor, env_spec_value)
-
-        elif env_spec_type == 'yaml_content':
-            if not isinstance(env_spec_value, str):
-                return {"success": False, "error": "YAML content must be a string."}
-            # Write content to a temporary file (sync operation, but should be fast)
-            fd, temp_yaml_path = tempfile.mkstemp(suffix='.yaml', text=True)
-            with os.fdopen(fd, 'w') as tmp_yaml:
-                tmp_yaml.write(env_spec_value)
-            print(f"Created temporary YAML file: {temp_yaml_path}")
-            executor = await loop.run_in_executor(None, CondaEnvExecutor.from_yaml, temp_yaml_path)
-
-        elif env_spec_type == 'packages':
-            if not isinstance(env_spec_value, list):
-                return {"success": False, "error": "'packages' spec value must be a list of strings."}
-            executor = await loop.run_in_executor(
-                None,
-                CondaEnvExecutor.create_temp_env,
-                env_spec_value,
-                channels or ["conda-forge"] # Default channels
-            )
-        else:
-            return {"success": False, "error": f"Invalid env_spec_type: {env_spec_type}. Must be one of "
-                                             f"'yaml_file', 'pack_file', 'yaml_content', 'packages'."}
+        # --- Create Environment ---
+        executor = await loop.run_in_executor(
+            None,
+            CondaEnvExecutor.create_temp_env,
+            dependencies,
+            channels
+        )
 
         print(f"Environment ready at: {executor.env_path}")
 
@@ -149,14 +114,6 @@ async def execute_in_conda_env(
             except Exception as e:
                  print(f"Error during executor cleanup: {e}")
                  # Log error but don't prevent service from returning response
-
-        if temp_yaml_path and os.path.exists(temp_yaml_path):
-            try:
-                os.remove(temp_yaml_path)
-                print(f"Removed temporary YAML file: {temp_yaml_path}")
-            except OSError as e:
-                # Log error if cleanup fails, but don't crash service
-                print(f"Error removing temporary YAML file {temp_yaml_path}: {e}")
 
 
 async def start_service(args, server):
