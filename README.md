@@ -1,3 +1,206 @@
+# Conda Environment Executor with Job Queue
+
+This package provides a Hypha service for executing Python code in isolated Conda environments, with both synchronous and asynchronous execution options.
+
+## Features
+
+- **Isolated Execution**: Run Python code in a clean, isolated Conda environment with specified dependencies
+- **Synchronous Execution**: Execute code and wait for results
+- **Asynchronous Execution**: Submit jobs to a queue and retrieve results later
+- **Job Management**: Submit, monitor, and retrieve results from jobs
+- **Persistent Storage**: Job results are saved and can be retrieved even after service restart
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/conda-env-executor.git
+cd conda-env-executor
+
+# Install dependencies
+pip install -e .
+```
+
+## Running the Service
+
+Start the Hypha service:
+
+```bash
+python -m conda_env_executor.hypha_service --workspace YOUR_WORKSPACE
+```
+
+Options:
+- `--server-url`: Hypha server URL (default: https://hypha.aicell.io)
+- `--token`: Hypha login token (can also be set via HYPHA_TOKEN env var)
+- `--workspace`: Hypha workspace ID (can also be set via HYPHA_WORKSPACE env var)
+- `--service-id`: Custom service ID (default: conda-executor-<uuid>)
+- `--job-queue-dir`: Directory to store job queue data (default: ~/.conda_env_jobs)
+
+## Using the Service
+
+### Synchronous Execution
+
+To execute code synchronously and wait for results:
+
+```python
+import asyncio
+from hypha_rpc import login, connect_to_server
+
+async def main():
+    # Connect to Hypha
+    token = await login({"server_url": "https://hypha.aicell.io"})
+    server = await connect_to_server({
+        "server_url": "https://hypha.aicell.io",
+        "token": token,
+        "workspace": "YOUR_WORKSPACE"
+    })
+    
+    service = await server.get_service("SERVICE_ID")
+    
+    # Execute code synchronously
+    result = await service.execute(
+        code="""
+def execute(input_data):
+    return {"message": "Hello from conda env!", "input": input_data}
+        """,
+        input_data={"name": "World"},
+        dependencies=["python=3.9"]
+    )
+    
+    print(result)
+
+asyncio.run(main())
+```
+
+### Asynchronous Execution (Job Queue)
+
+To submit a job and retrieve results later:
+
+```python
+import asyncio
+from hypha_rpc import login, connect_to_server
+
+async def main():
+    # Connect to Hypha
+    token = await login({"server_url": "https://hypha.aicell.io"})
+    server = await connect_to_server({
+        "server_url": "https://hypha.aicell.io",
+        "token": token,
+        "workspace": "YOUR_WORKSPACE"
+    })
+    
+    service = await server.get_service("SERVICE_ID")
+    
+    # Submit a job
+    submit_result = await service.submit_job(
+        code="""
+def execute(input_data):
+    import time
+    time.sleep(10)  # Simulate long-running task
+    return {"message": "Task completed!", "input": input_data}
+        """,
+        input_data={"task": "long-running"},
+        dependencies=["python=3.9"]
+    )
+    
+    job_id = submit_result["job_id"]
+    print(f"Job submitted with ID: {job_id}")
+    
+    # Check job status
+    status = await service.get_job_status(job_id)
+    print(f"Job status: {status}")
+    
+    # Wait for job to complete and get results
+    result = await service.wait_for_result(job_id, timeout=60)
+    print(f"Job result: {result}")
+    
+    # Or retrieve results later
+    result = await service.get_job_result(job_id)
+    print(f"Job result: {result}")
+    
+    # List all recent jobs
+    jobs = await service.list_jobs()
+    print(f"Recent jobs: {jobs}")
+    
+    # List only your jobs
+    my_jobs = await service.list_jobs(user_id="me")
+    print(f"My jobs: {my_jobs}")
+    
+    # Cancel a job
+    cancel_result = await service.cancel_job(job_id)
+    print(f"Cancel result: {cancel_result}")
+
+asyncio.run(main())
+```
+
+### Job Management Features
+
+The job queue system provides several key features for managing code execution jobs:
+
+1. **User-Specific Jobs**: Each job is associated with the user who submitted it, allowing for:
+   - Listing only your own jobs
+   - User-based access control (only job owners can cancel their jobs)
+
+2. **Job Status Tracking**: Monitor job status through the entire lifecycle:
+   - Pending: Job is in queue waiting to be processed
+   - Running: Job is currently being executed
+   - Completed: Job has finished successfully
+   - Failed: Job encountered an error or was canceled
+
+3. **Job Cancellation**: Cancel jobs that are pending or running:
+   - Pending jobs are immediately marked as canceled
+   - Running jobs are marked for cancellation
+
+4. **Persistent Storage**: All job information and results are saved to disk, allowing retrieval even after service restart
+
+## Example Client
+
+An example client script is provided to demonstrate job submission and monitoring:
+
+```bash
+# List all recent jobs
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID --list-jobs
+
+# List only your jobs
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID --my-jobs
+
+# List jobs filtered by status
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID --list-jobs --status running
+
+# Submit a job
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID \
+    --code-file examples/sample_job.py \
+    --input-data examples/sample_input.json \
+    --dependencies "python=3.9,numpy,pandas,matplotlib"
+
+# Check job status
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID \
+    --job-id JOB_ID
+
+# Wait for job completion
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID \
+    --job-id JOB_ID --wait
+
+# Cancel a job
+python examples/job_queue_client.py --workspace YOUR_WORKSPACE --service-id SERVICE_ID \
+    --job-id JOB_ID --cancel
+```
+
+## API Reference
+
+### Synchronous Execution
+
+- **execute_in_conda_env**: Execute code in a conda environment and wait for results
+
+### Asynchronous Execution (Job Queue)
+
+- **submit_job**: Submit a job to the queue
+- **get_job_status**: Check the status of a job
+- **get_job_result**: Retrieve the result of a completed job
+- **wait_for_result**: Wait for a job to complete and return its result
+- **list_jobs**: List jobs, optionally filtered by user and status
+- **cancel_job**: Cancel a job if it's still pending or running
+
 # Conda Environment Executor
 
 A Python package for executing code in isolated conda environments with efficient data passing between environments.

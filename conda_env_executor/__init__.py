@@ -1,16 +1,13 @@
 """
-Conda Environment Executor - Execute Python code in isolated conda environments.
+Conda Environment Executor
 
-This package provides tools for executing Python code in isolated conda environments
-with efficient data passing between environments using shared memory.
-
-Copyright (c) 2024, Wei Ouyang and contributors.
-Licensed under the BSD 3-Clause License.
+A package for executing Python code in isolated Conda environments.
 """
 
 from .executor import CondaEnvExecutor, ExecutionResult, TimingInfo
 from .env_spec import EnvSpec, read_env_spec
 from .shared_memory import SharedMemoryChannel
+from .job_queue import JobQueue, JobStatus, JobInfo, JobResult
 
 __version__ = "0.1.0"
 __all__ = [
@@ -20,4 +17,8 @@ __all__ = [
     "EnvSpec",
     "read_env_spec",
     "SharedMemoryChannel",
+    "JobQueue",
+    "JobStatus",
+    "JobInfo",
+    "JobResult",
 ] 
