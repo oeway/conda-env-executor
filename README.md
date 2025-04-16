@@ -1,3 +1,217 @@
+# Conda Environment Executor
+
+A robust Python package for executing code in isolated conda environments with async support and job management.
+
+## Features
+
+- **Isolated Execution**: Run Python code in isolated conda environments
+- **Async Support**: Execute code asynchronously with async/await syntax
+- **Job Management**: Submit, monitor, cancel, and retrieve results from jobs
+- **Timeout Handling**: Set execution timeouts for jobs
+- **Shared Memory**: Efficient data transfer between processes using shared memory
+- **Type Safety**: Full type safety with Pydantic models
+- **Comprehensive Testing**: Extensive test coverage
+
+## Installation
+
+```bash
+pip install conda-env-executor
+```
+
+## Quick Start
+
+### Synchronous Execution
+
+```python
+from conda_env_executor import CondaEnvExecutor
+
+# Create an executor with a conda environment
+executor = CondaEnvExecutor(env_spec="environment.yml")
+
+# Execute code
+code = """
+def execute(data=None):
+    import numpy as np
+    return np.array(data).mean()
+"""
+
+result = executor.execute(code, input_data=[1, 2, 3, 4, 5])
+print(result.result)  # Output: 3.0
+```
+
+### Asynchronous Execution
+
+```python
+import asyncio
+from conda_env_executor import AsyncCondaEnvExecutor, Job, ExecutionConfig
+
+async def main():
+    async with AsyncCondaEnvExecutor(env_spec="environment.yml") as executor:
+        # Create a job
+        job = Job(
+            code="""
+            def execute(data=None):
+                import time
+                time.sleep(2)  # Simulate long running task
+                return data * 2
+            """,
+            input_data=21,
+            config=ExecutionConfig(timeout=30)
+        )
+        
+        # Submit the job
+        job_id = await executor.submit_job(job)
+        
+        # Wait for result
+        result = await executor.wait_for_result(job_id)
+        print(result.result)  # Output: 42
+
+asyncio.run(main())
+```
+
+### Using Shared Memory
+
+```python
+from conda_env_executor import CondaEnvExecutor, ExecutionConfig
+import numpy as np
+
+# Create large data
+data = np.random.rand(1000000)
+
+# Configure executor to use shared memory
+executor = CondaEnvExecutor(
+    env_spec="environment.yml",
+    config=ExecutionConfig(use_shared_memory=True)
+)
+
+code = """
+def execute(data):
+    return data.mean()
+"""
+
+result = executor.execute(code, input_data=data)
+print(result.result)
+```
+
+## Advanced Usage
+
+### Job Management
+
+```python
+async def process_jobs():
+    async with AsyncCondaEnvExecutor(env_spec="environment.yml") as executor:
+        # Submit multiple jobs
+        jobs = [
+            Job(code="def execute(): return 1"),
+            Job(code="def execute(): return 2"),
+            Job(code="def execute(): return 3"),
+        ]
+        
+        job_ids = []
+        for job in jobs:
+            job_id = await executor.submit_job(job)
+            job_ids.append(job_id)
+        
+        # Monitor job status
+        while job_ids:
+            for job_id in job_ids[:]:
+                status = await executor.get_job_status(job_id)
+                if status.is_finished:
+                    result = await executor.get_result(job_id)
+                    print(f"Job {job_id}: {result.result}")
+                    job_ids.remove(job_id)
+            
+            await asyncio.sleep(0.1)
+```
+
+### Error Handling
+
+```python
+from conda_env_executor import Job, ExecutionConfig
+
+# Job with timeout
+job = Job(
+    code="""
+    def execute():
+        import time
+        time.sleep(10)
+        return 42
+    """,
+    config=ExecutionConfig(timeout=5)
+)
+
+try:
+    result = executor.execute(job)
+except TimeoutError:
+    print("Job timed out")
+
+# Job with retries
+job = Job(
+    code="""
+    def execute():
+        import random
+        if random.random() < 0.5:
+            raise ValueError("Random failure")
+        return 42
+    """,
+    config=ExecutionConfig(max_retries=3, retry_delay=1.0)
+)
+
+result = executor.execute(job)
+print(f"Took {result.metadata.attempts} attempts")
+```
+
+## Development
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/conda-env-executor.git
+cd conda-env-executor
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+
+# Install development dependencies
+pip install -e ".[dev,test]"
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=conda_env_executor
+
+# Run specific test file
+pytest tests/test_executor.py
+```
+
+### Code Quality
+
+```bash
+# Format code
+black conda_env_executor tests
+
+# Run linter
+ruff check .
+
+# Run type checker
+mypy conda_env_executor
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
 # Conda Environment Executor with Job Queue
 
 This package provides a Hypha service for executing Python code in isolated Conda environments, with both synchronous and asynchronous execution options.

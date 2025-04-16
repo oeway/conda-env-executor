@@ -1,144 +1,150 @@
-You are an expert in Schema-Driven Python Development, specializing in building well-structured, maintainable Python applications using contract-first approaches.
+# Conda Environment Executor - AI Assistant Guidelines
 
-Core Expertise:
-- Schema-Driven Development
-- Python Architecture & Standards
-- Contract-First Design
-- Testing & Quality Assurance
-- Package Management
-- Code Generation
+## Project Overview
+This project implements a robust executor for running Python code in isolated conda environments with the following key features:
+- Async/await inline execution support
+- Job management (submit, status, cancel, retrieve results)
+- Timeout handling
+- Shared memory for efficient data passing
+- Strong type safety with Pydantic
+- Comprehensive test coverage
 
-Development Guidelines:
+## Code Generation Rules
 
-1. Schema & Project Structure
-ALWAYS:
-- Define data models in schemas first
-- Use proper package layout (src/ layout)
-- Follow Python standards (PEP 8, 484, 517, 621)
-- Generate code from schemas
-- Maintain schema-to-code documentation
-- Use proper configuration management
+### 1. Schema-First Development
+- Always define Pydantic models before implementing features
+- Place schemas in `conda_env_executor/schemas.py`
+- Use strict type hints and field validations
+- Document all fields and validation rules
 
-NEVER:
-- Write implementations before schemas
-- Mix package boundaries
-- Use flat structure
-- Skip schema validation
-- Ignore Python standards
-- Leave schemas undocumented
+Example schema structure:
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
 
-2. Code Organization & Type System
-ALWAYS:
-- Define types in central schema
-- Use proper imports (absolute over relative)
-- Implement clean architecture
-- Follow SOLID principles
-- Generate type stubs from schemas
-- Document code properly
-- Use type hints consistently
+class ExecutionConfig(BaseModel):
+    timeout: Optional[float] = Field(None, description="Execution timeout in seconds")
+    env_name: Optional[str] = Field(None, description="Name of conda environment")
+```
 
-NEVER:
-- Define types ad-hoc
-- Use circular imports
-- Mix responsibilities
-- Skip type annotations
-- Break interface contracts
-- Ignore documentation
+### 2. Testing Requirements
+- Write tests before implementing features
+- Place tests in `tests/` directory
+- Use pytest fixtures for common setup
+- Test both success and failure cases
+- Include edge cases and timeout scenarios
+- Verify async behavior
+- Test shared memory operations
+- Run tests after each modification:
+  ```bash
+  pytest tests/
+  pytest tests/test_specific.py -v
+  ```
 
-3. Dependency & Interface Management
-ALWAYS:
-- Define interfaces in schemas
-- Use UV for virtual environments (uv venv)
-- Use UV for package operations (uv pip)
-- Pin dependencies strictly with UV
-- Generate interface stubs
-- Version interfaces
-- Handle dev dependencies
-- Use requirements.txt with UV pip sync
-- Update regularly with validation
-- Use UV pip compile for requirements
+### 3. Code Organization
+- Use src layout with conda_env_executor package
+- Separate concerns into modules:
+  - executor.py: Core execution logic
+  - async_executor.py: Async execution support
+  - job_manager.py: Job management
+  - shared_memory.py: Shared memory operations
+  - schemas.py: Pydantic models
+  - utils.py: Helper functions
 
-NEVER:
-- Create interfaces without schemas
-- Use pip directly (always use uv pip)
-- Mix environment dependencies
-- Use global packages
-- Use pip venv (use uv venv instead)
-- Skip version pinning
-- Break interface contracts
-- Ignore security updates
-- Use pip install (use uv pip sync)
+### 4. Error Handling
+- Use custom exception classes
+- Provide detailed error messages
+- Handle timeouts gracefully
+- Implement proper cleanup
+- Log errors with context
 
-4. Testing & Validation
-ALWAYS:
-- Define validation rules in schemas
-- Write unit tests against schemas
-- Implement integration tests
-- Generate validators
-- Use proper fixtures
-- Test edge cases
-- Measure coverage
-- Validate against schemas
+### 5. Documentation
+- Add docstrings to all classes and methods
+- Include type hints
+- Document parameters and return values
+- Provide usage examples
+- Update README.md with new features
 
-NEVER:
-- Skip schema validation
-- Skip test documentation
-- Mix test types
-- Ignore test isolation
-- Skip error scenarios
-- Bypass validators
+### 6. Async Implementation
+- Use asyncio for async operations
+- Implement proper cancellation
+- Handle timeouts in async context
+- Use asyncio.Queue for job management
+- Document async behavior
 
-Code Quality & Generation:
-- Use schema-based generators
-- Implement proper linting
-- Follow style guides
-- Use static analysis
-- Monitor complexity
-- Validate generated code
-- Track schema dependencies
+### 7. Job Management
+- Implement job states (pending, running, completed, failed, cancelled)
+- Use UUIDs for job identification
+- Track job metadata (creation time, start time, completion time)
+- Support job cancellation
+- Handle job timeouts
+- Implement job result retrieval
 
-Documentation:
-- Write clear docstrings
-- Document schemas as source of truth
-- Maintain README with schema references
-- Document APIs with schema examples
-- Include schema validation examples
-- Keep schema and docs synchronized
+### 8. Shared Memory
+- Use shared memory for large data transfers
+- Implement proper cleanup
+- Handle concurrent access
+- Document size limitations
+- Implement timeouts
 
-Development Tools:
-- Schema editors and validators
-- Code generators
-- UV package manager
-- Modern Python IDE
-- Debugging tools
-- Version control
-- CI/CD with schema validation
-- Static analysis tools
-- UV for dependency management
+### 9. Type Safety
+- Use Pydantic for all data models
+- Implement strict validation
+- Use TypeVar for generic types
+- Document type constraints
+- Handle type conversions
 
-Package Distribution:
-- Use proper packaging (setup.py/pyproject.toml)
-- Handle versioning (schemas and code)
-- Include schema metadata
-- Document schema requirements
-- Provide schema validation tools
-- Use UV for package operations
-- Maintain UV-compatible requirements
+### 10. Performance Considerations
+- Optimize environment creation
+- Cache conda environments
+- Minimize data copying
+- Use efficient serialization
+- Monitor memory usage
 
-Best Practices:
-- Schema first, always
-- Follow PEP standards
-- Generate, don't write boilerplate
-- Handle errors with schema validation
-- Use proper logging with structured data
-- Implement monitoring with schema validation
-- Use UV for all Python package operations
-- Never use pip directly
+## Example Usage
 
-Remember:
-- Schemas are source of truth
-- Maintain schema-code consistency
-- Generate what you can
-- Validate everything
-- Document thoroughly
-- Focus on maintainability
+```python
+from conda_env_executor import CondaEnvExecutor, Job
+
+# Synchronous execution
+executor = CondaEnvExecutor(env_spec="environment.yml")
+result = executor.execute("def execute(): return 42")
+
+# Asynchronous execution
+async with AsyncCondaEnvExecutor(env_spec="environment.yml") as executor:
+    job = await executor.submit_job(
+        Job(
+            code="def execute(): return 42",
+            config=ExecutionConfig(timeout=30)
+        )
+    )
+    result = await executor.wait_for_result(job.id)
+```
+
+## Testing Guidelines
+
+1. Unit Tests:
+   - Test individual components
+   - Mock external dependencies
+   - Test error conditions
+   - Verify timeout handling
+
+2. Integration Tests:
+   - Test component interactions
+   - Verify end-to-end workflows
+   - Test with real conda environments
+   - Verify cleanup
+
+3. Performance Tests:
+   - Test with large datasets
+   - Measure execution times
+   - Verify memory usage
+   - Test concurrent execution
+
+## Commit Guidelines
+- Write clear commit messages
+- Reference issue numbers
+- Describe breaking changes
+- Update tests with changes
+- Run full test suite before commit
