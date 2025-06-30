@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=65.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "conda-env-executor"
@@ -8,14 +8,15 @@ version = "0.1.2"
 description = "Execute Python code in isolated conda environments with efficient data passing"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
-authors = [
-    { name = "Wei Ouyang", email = "oeway007@gmail.com" },
-]
 dependencies = [
     "pyyaml>=6.0",
     "psutil>=5.9.0",
     "conda-pack>=0.7.0",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Wei Ouyang", email = "oeway007@gmail.com" },
 ]
 
 [project.optional-dependencies]
@@ -30,8 +31,11 @@ dev = [
     "mypy>=1.0",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["conda_env_executor"]
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["conda_env_executor*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
