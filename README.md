@@ -16,7 +16,7 @@ A robust Python package for executing code in isolated conda environments with e
 ## Installation
 
 ```bash
-pip install conda-env-executor
+pip install https://github.com/oeway/conda-env-executor/archive/refs/heads/main.zip
 ```
 
 ## Quick Start
