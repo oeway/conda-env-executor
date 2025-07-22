@@ -34,22 +34,23 @@ executor = CondaEnvExecutor.create_temp_env(
     channels=['conda-forge']
 )
 
+
 # Define code to run - must include an 'execute' function
-code = """
+code = '''
 import numpy as np
 import pandas as pd
 
 def execute(data):
     df = pd.DataFrame(data)
     return {
-        'mean': df.values.mean(),
+        'mean': df['values'].mean(),
         'shape': df.shape,
         'description': df.describe().to_dict()
     }
-"""
+'''
 
 # Execute with input data
-input_data = {"values": [1, 2, 3, 4, 5], "names": ["a", "b", "c", "d", "e"]}
+input_data = {"values": [1, 2, 3, 4, 5]}
 
 with executor:
     result = executor.execute(code, input_data)
